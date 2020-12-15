@@ -1,47 +1,31 @@
-/**
- * Copyright (c) 2016-present, RxJava Contributors.
- *
- * <p>Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file
- * except in compliance with the License. You may obtain a copy of the License at
- *
- * <p>http://www.apache.org/licenses/LICENSE-2.0
- *
- * <p>Unless required by applicable law or agreed to in writing, software distributed under the
- * License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing permissions and
- * limitations under the License.
- */
 package io.reactivex.rxjava3.core;
 
 import io.reactivex.rxjava3.annotations.NonNull;
 
 /**
- * Base interface for emitting signals in a push-fashion in various generator-like source operators
- * (create, generate).
+ * 基本接口, 用于在各种类似于发生器的源操作程序(创建,生成)中以推送方式发射信号.
  *
- * <p>Note that the {@link Emitter#onNext}, {@link Emitter#onError} and {@link Emitter#onComplete}
- * methods provided to the function via the {@link Emitter} instance should be called synchronously,
- * never concurrently. Calling them from multiple threads is not supported and leads to an undefined
- * behavior.
+ * <p>请注意, 通过{@link Emitter}实例提供给函数的{@link Emitter＃onNext}, {@link Emitter＃onError}和{@link
+ * Emitter＃onComplete}方法应被同步调用, 而不是同时调用. 不支持从多个线程调用它们, 并导致未定义的行为.
  *
- * @param <T> the value type emitted
+ * @param <T> 发射的数据信号的类型
  */
 public interface Emitter<@NonNull T> {
 
   /**
-   * Signal a normal value.
+   * 发出正常值信号.
    *
-   * @param value the value to signal, not {@code null}
+   * @param value 要发出信号的值， 而不是{@code null}
    */
   void onNext(@NonNull T value);
 
   /**
-   * Signal a {@link Throwable} exception.
+   * 发出{@link Throwable}异常的信号.
    *
-   * @param error the {@code Throwable} to signal, not {@code null}
+   * @param error {@code Throwable}发出信号， 而不是{@code null}
    */
   void onError(@NonNull Throwable error);
 
-  /** Signal a completion. */
+  /** 发出完成信号. */
   void onComplete();
 }
