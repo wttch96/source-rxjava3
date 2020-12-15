@@ -1,549 +1,578 @@
 /**
  * Copyright (c) 2016-present, RxJava Contributors.
  *
- * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
- * compliance with the License. You may obtain a copy of the License at
+ * <p>Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file
+ * except in compliance with the License. You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ * <p>http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software distributed under the License is
- * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
- * the License for the specific language governing permissions and limitations under the License.
+ * <p>Unless required by applicable law or agreed to in writing, software distributed under the
+ * License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+ * express or implied. See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 package io.reactivex.rxjava3.internal.operators.observable;
 
-import java.util.Objects;
-import java.util.concurrent.atomic.*;
-
-import io.reactivex.rxjava3.core.*;
+import io.reactivex.rxjava3.core.ObservableSource;
+import io.reactivex.rxjava3.core.Observer;
+import io.reactivex.rxjava3.core.Scheduler;
 import io.reactivex.rxjava3.disposables.Disposable;
 import io.reactivex.rxjava3.exceptions.Exceptions;
-import io.reactivex.rxjava3.functions.*;
+import io.reactivex.rxjava3.functions.Function;
+import io.reactivex.rxjava3.functions.Supplier;
 import io.reactivex.rxjava3.internal.disposables.DisposableHelper;
-import io.reactivex.rxjava3.internal.fuseable.*;
+import io.reactivex.rxjava3.internal.fuseable.QueueDisposable;
+import io.reactivex.rxjava3.internal.fuseable.SimpleQueue;
 import io.reactivex.rxjava3.internal.queue.SpscLinkedArrayQueue;
-import io.reactivex.rxjava3.internal.util.*;
+import io.reactivex.rxjava3.internal.util.AtomicThrowable;
+import io.reactivex.rxjava3.internal.util.ErrorMode;
 import io.reactivex.rxjava3.observers.SerializedObserver;
 import io.reactivex.rxjava3.plugins.RxJavaPlugins;
+import java.util.Objects;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 public final class ObservableConcatMapScheduler<T, U> extends AbstractObservableWithUpstream<T, U> {
 
+  final Function<? super T, ? extends ObservableSource<? extends U>> mapper;
+
+  final int bufferSize;
+
+  final ErrorMode delayErrors;
+
+  final Scheduler scheduler;
+
+  public ObservableConcatMapScheduler(
+      ObservableSource<T> source,
+      Function<? super T, ? extends ObservableSource<? extends U>> mapper,
+      int bufferSize,
+      ErrorMode delayErrors,
+      Scheduler scheduler) {
+    super(source);
+    this.mapper = mapper;
+    this.delayErrors = delayErrors;
+    this.bufferSize = Math.max(8, bufferSize);
+    this.scheduler = scheduler;
+  }
+
+  @Override
+  public void subscribeActual(Observer<? super U> observer) {
+    if (delayErrors == ErrorMode.IMMEDIATE) {
+      SerializedObserver<U> serial = new SerializedObserver<>(observer);
+      source.subscribe(
+          new ConcatMapObserver<>(serial, mapper, bufferSize, scheduler.createWorker()));
+    } else {
+      source.subscribe(
+          new ConcatMapDelayErrorObserver<>(
+              observer,
+              mapper,
+              bufferSize,
+              delayErrors == ErrorMode.END,
+              scheduler.createWorker()));
+    }
+  }
+
+  static final class ConcatMapObserver<T, U> extends AtomicInteger
+      implements Observer<T>, Disposable, Runnable {
+
+    private static final long serialVersionUID = 8828587559905699186L;
+    final Observer<? super U> downstream;
     final Function<? super T, ? extends ObservableSource<? extends U>> mapper;
-
+    final InnerObserver<U> inner;
     final int bufferSize;
+    final Scheduler.Worker worker;
 
-    final ErrorMode delayErrors;
+    SimpleQueue<T> queue;
 
-    final Scheduler scheduler;
+    Disposable upstream;
 
-    public ObservableConcatMapScheduler(ObservableSource<T> source, Function<? super T, ? extends ObservableSource<? extends U>> mapper,
-            int bufferSize, ErrorMode delayErrors, Scheduler scheduler) {
-        super(source);
-        this.mapper = mapper;
-        this.delayErrors = delayErrors;
-        this.bufferSize = Math.max(8, bufferSize);
-        this.scheduler = scheduler;
+    volatile boolean active;
+
+    volatile boolean disposed;
+
+    volatile boolean done;
+
+    int fusionMode;
+
+    ConcatMapObserver(
+        Observer<? super U> actual,
+        Function<? super T, ? extends ObservableSource<? extends U>> mapper,
+        int bufferSize,
+        Scheduler.Worker worker) {
+      this.downstream = actual;
+      this.mapper = mapper;
+      this.bufferSize = bufferSize;
+      this.inner = new InnerObserver<>(actual, this);
+      this.worker = worker;
     }
 
     @Override
-    public void subscribeActual(Observer<? super U> observer) {
-        if (delayErrors == ErrorMode.IMMEDIATE) {
-            SerializedObserver<U> serial = new SerializedObserver<>(observer);
-            source.subscribe(new ConcatMapObserver<>(serial, mapper, bufferSize, scheduler.createWorker()));
-        } else {
-            source.subscribe(new ConcatMapDelayErrorObserver<>(observer, mapper, bufferSize, delayErrors == ErrorMode.END, scheduler.createWorker()));
+    public void onSubscribe(Disposable d) {
+      if (DisposableHelper.validate(this.upstream, d)) {
+        this.upstream = d;
+        if (d instanceof QueueDisposable) {
+          @SuppressWarnings("unchecked")
+          QueueDisposable<T> qd = (QueueDisposable<T>) d;
+
+          int m = qd.requestFusion(QueueDisposable.ANY);
+          if (m == QueueDisposable.SYNC) {
+            fusionMode = m;
+            queue = qd;
+            done = true;
+
+            downstream.onSubscribe(this);
+
+            drain();
+            return;
+          }
+
+          if (m == QueueDisposable.ASYNC) {
+            fusionMode = m;
+            queue = qd;
+
+            downstream.onSubscribe(this);
+
+            return;
+          }
         }
+
+        queue = new SpscLinkedArrayQueue<>(bufferSize);
+
+        downstream.onSubscribe(this);
+      }
     }
 
-    static final class ConcatMapObserver<T, U> extends AtomicInteger implements Observer<T>, Disposable, Runnable {
+    @Override
+    public void onNext(T t) {
+      if (done) {
+        return;
+      }
+      if (fusionMode == QueueDisposable.NONE) {
+        queue.offer(t);
+      }
+      drain();
+    }
 
-        private static final long serialVersionUID = 8828587559905699186L;
-        final Observer<? super U> downstream;
-        final Function<? super T, ? extends ObservableSource<? extends U>> mapper;
-        final InnerObserver<U> inner;
-        final int bufferSize;
-        final Scheduler.Worker worker;
+    @Override
+    public void onError(Throwable t) {
+      if (done) {
+        RxJavaPlugins.onError(t);
+        return;
+      }
+      done = true;
+      dispose();
+      downstream.onError(t);
+    }
 
-        SimpleQueue<T> queue;
+    @Override
+    public void onComplete() {
+      if (done) {
+        return;
+      }
+      done = true;
+      drain();
+    }
 
-        Disposable upstream;
+    void innerComplete() {
+      active = false;
+      drain();
+    }
 
-        volatile boolean active;
+    @Override
+    public boolean isDisposed() {
+      return disposed;
+    }
 
-        volatile boolean disposed;
+    @Override
+    public void dispose() {
+      disposed = true;
+      inner.dispose();
+      upstream.dispose();
+      worker.dispose();
 
-        volatile boolean done;
+      if (getAndIncrement() == 0) {
+        queue.clear();
+      }
+    }
 
-        int fusionMode;
+    void drain() {
+      if (getAndIncrement() != 0) {
+        return;
+      }
+      worker.schedule(this);
+    }
 
-        ConcatMapObserver(Observer<? super U> actual,
-                                Function<? super T, ? extends ObservableSource<? extends U>> mapper, int bufferSize, Scheduler.Worker worker) {
-            this.downstream = actual;
-            this.mapper = mapper;
-            this.bufferSize = bufferSize;
-            this.inner = new InnerObserver<>(actual, this);
-            this.worker = worker;
+    @Override
+    public void run() {
+      for (; ; ) {
+        if (disposed) {
+          queue.clear();
+          return;
         }
+        if (!active) {
 
-        @Override
-        public void onSubscribe(Disposable d) {
-            if (DisposableHelper.validate(this.upstream, d)) {
-                this.upstream = d;
-                if (d instanceof QueueDisposable) {
-                    @SuppressWarnings("unchecked")
-                    QueueDisposable<T> qd = (QueueDisposable<T>) d;
+          boolean d = done;
 
-                    int m = qd.requestFusion(QueueDisposable.ANY);
-                    if (m == QueueDisposable.SYNC) {
-                        fusionMode = m;
-                        queue = qd;
-                        done = true;
+          T t;
 
-                        downstream.onSubscribe(this);
-
-                        drain();
-                        return;
-                    }
-
-                    if (m == QueueDisposable.ASYNC) {
-                        fusionMode = m;
-                        queue = qd;
-
-                        downstream.onSubscribe(this);
-
-                        return;
-                    }
-                }
-
-                queue = new SpscLinkedArrayQueue<>(bufferSize);
-
-                downstream.onSubscribe(this);
-            }
-        }
-
-        @Override
-        public void onNext(T t) {
-            if (done) {
-                return;
-            }
-            if (fusionMode == QueueDisposable.NONE) {
-                queue.offer(t);
-            }
-            drain();
-        }
-
-        @Override
-        public void onError(Throwable t) {
-            if (done) {
-                RxJavaPlugins.onError(t);
-                return;
-            }
-            done = true;
+          try {
+            t = queue.poll();
+          } catch (Throwable ex) {
+            Exceptions.throwIfFatal(ex);
             dispose();
-            downstream.onError(t);
-        }
+            queue.clear();
+            downstream.onError(ex);
+            worker.dispose();
+            return;
+          }
 
-        @Override
-        public void onComplete() {
-            if (done) {
-                return;
-            }
-            done = true;
-            drain();
-        }
+          boolean empty = t == null;
 
-        void innerComplete() {
-            active = false;
-            drain();
-        }
-
-        @Override
-        public boolean isDisposed() {
-            return disposed;
-        }
-
-        @Override
-        public void dispose() {
+          if (d && empty) {
             disposed = true;
-            inner.dispose();
-            upstream.dispose();
+            downstream.onComplete();
             worker.dispose();
+            return;
+          }
 
-            if (getAndIncrement() == 0) {
-                queue.clear();
+          if (!empty) {
+            ObservableSource<? extends U> o;
+
+            try {
+              o =
+                  Objects.requireNonNull(
+                      mapper.apply(t), "The mapper returned a null ObservableSource");
+            } catch (Throwable ex) {
+              Exceptions.throwIfFatal(ex);
+              dispose();
+              queue.clear();
+              downstream.onError(ex);
+              worker.dispose();
+              return;
             }
+
+            active = true;
+            o.subscribe(inner);
+          }
         }
 
-        void drain() {
-            if (getAndIncrement() != 0) {
-                return;
-            }
-            worker.schedule(this);
+        if (decrementAndGet() == 0) {
+          break;
         }
-
-        @Override
-        public void run() {
-            for (;;) {
-                if (disposed) {
-                    queue.clear();
-                    return;
-                }
-                if (!active) {
-
-                    boolean d = done;
-
-                    T t;
-
-                    try {
-                        t = queue.poll();
-                    } catch (Throwable ex) {
-                        Exceptions.throwIfFatal(ex);
-                        dispose();
-                        queue.clear();
-                        downstream.onError(ex);
-                        worker.dispose();
-                        return;
-                    }
-
-                    boolean empty = t == null;
-
-                    if (d && empty) {
-                        disposed = true;
-                        downstream.onComplete();
-                        worker.dispose();
-                        return;
-                    }
-
-                    if (!empty) {
-                        ObservableSource<? extends U> o;
-
-                        try {
-                            o = Objects.requireNonNull(mapper.apply(t), "The mapper returned a null ObservableSource");
-                        } catch (Throwable ex) {
-                            Exceptions.throwIfFatal(ex);
-                            dispose();
-                            queue.clear();
-                            downstream.onError(ex);
-                            worker.dispose();
-                            return;
-                        }
-
-                        active = true;
-                        o.subscribe(inner);
-                    }
-                }
-
-                if (decrementAndGet() == 0) {
-                    break;
-                }
-            }
-        }
-
-        static final class InnerObserver<U> extends AtomicReference<Disposable> implements Observer<U> {
-
-            private static final long serialVersionUID = -7449079488798789337L;
-
-            final Observer<? super U> downstream;
-            final ConcatMapObserver<?, ?> parent;
-
-            InnerObserver(Observer<? super U> actual, ConcatMapObserver<?, ?> parent) {
-                this.downstream = actual;
-                this.parent = parent;
-            }
-
-            @Override
-            public void onSubscribe(Disposable d) {
-                DisposableHelper.replace(this, d);
-            }
-
-            @Override
-            public void onNext(U t) {
-                downstream.onNext(t);
-            }
-
-            @Override
-            public void onError(Throwable t) {
-                parent.dispose();
-                downstream.onError(t);
-            }
-
-            @Override
-            public void onComplete() {
-                parent.innerComplete();
-            }
-
-            void dispose() {
-                DisposableHelper.dispose(this);
-            }
-        }
+      }
     }
 
-    static final class ConcatMapDelayErrorObserver<T, R>
-    extends AtomicInteger
-    implements Observer<T>, Disposable, Runnable {
+    static final class InnerObserver<U> extends AtomicReference<Disposable> implements Observer<U> {
 
-        private static final long serialVersionUID = -6951100001833242599L;
+      private static final long serialVersionUID = -7449079488798789337L;
 
-        final Observer<? super R> downstream;
+      final Observer<? super U> downstream;
+      final ConcatMapObserver<?, ?> parent;
 
-        final Function<? super T, ? extends ObservableSource<? extends R>> mapper;
+      InnerObserver(Observer<? super U> actual, ConcatMapObserver<?, ?> parent) {
+        this.downstream = actual;
+        this.parent = parent;
+      }
 
-        final int bufferSize;
+      @Override
+      public void onSubscribe(Disposable d) {
+        DisposableHelper.replace(this, d);
+      }
 
-        final AtomicThrowable errors;
+      @Override
+      public void onNext(U t) {
+        downstream.onNext(t);
+      }
 
-        final DelayErrorInnerObserver<R> observer;
+      @Override
+      public void onError(Throwable t) {
+        parent.dispose();
+        downstream.onError(t);
+      }
 
-        final boolean tillTheEnd;
+      @Override
+      public void onComplete() {
+        parent.innerComplete();
+      }
 
-        final Scheduler.Worker worker;
+      void dispose() {
+        DisposableHelper.dispose(this);
+      }
+    }
+  }
 
-        SimpleQueue<T> queue;
+  static final class ConcatMapDelayErrorObserver<T, R> extends AtomicInteger
+      implements Observer<T>, Disposable, Runnable {
 
-        Disposable upstream;
+    private static final long serialVersionUID = -6951100001833242599L;
 
-        volatile boolean active;
+    final Observer<? super R> downstream;
 
-        volatile boolean done;
+    final Function<? super T, ? extends ObservableSource<? extends R>> mapper;
 
-        volatile boolean cancelled;
+    final int bufferSize;
 
-        int sourceMode;
+    final AtomicThrowable errors;
 
-        ConcatMapDelayErrorObserver(Observer<? super R> actual,
-                Function<? super T, ? extends ObservableSource<? extends R>> mapper, int bufferSize,
-                        boolean tillTheEnd, Scheduler.Worker worker) {
-            this.downstream = actual;
-            this.mapper = mapper;
-            this.bufferSize = bufferSize;
-            this.tillTheEnd = tillTheEnd;
-            this.errors = new AtomicThrowable();
-            this.observer = new DelayErrorInnerObserver<>(actual, this);
-            this.worker = worker;
-        }
+    final DelayErrorInnerObserver<R> observer;
 
-        @Override
-        public void onSubscribe(Disposable d) {
-            if (DisposableHelper.validate(this.upstream, d)) {
-                this.upstream = d;
+    final boolean tillTheEnd;
 
-                if (d instanceof QueueDisposable) {
-                    @SuppressWarnings("unchecked")
-                    QueueDisposable<T> qd = (QueueDisposable<T>) d;
+    final Scheduler.Worker worker;
 
-                    int m = qd.requestFusion(QueueDisposable.ANY);
-                    if (m == QueueDisposable.SYNC) {
-                        sourceMode = m;
-                        queue = qd;
-                        done = true;
+    SimpleQueue<T> queue;
 
-                        downstream.onSubscribe(this);
+    Disposable upstream;
 
-                        drain();
-                        return;
-                    }
-                    if (m == QueueDisposable.ASYNC) {
-                        sourceMode = m;
-                        queue = qd;
+    volatile boolean active;
 
-                        downstream.onSubscribe(this);
+    volatile boolean done;
 
-                        return;
-                    }
-                }
+    volatile boolean cancelled;
 
-                queue = new SpscLinkedArrayQueue<>(bufferSize);
+    int sourceMode;
 
-                downstream.onSubscribe(this);
-            }
-        }
+    ConcatMapDelayErrorObserver(
+        Observer<? super R> actual,
+        Function<? super T, ? extends ObservableSource<? extends R>> mapper,
+        int bufferSize,
+        boolean tillTheEnd,
+        Scheduler.Worker worker) {
+      this.downstream = actual;
+      this.mapper = mapper;
+      this.bufferSize = bufferSize;
+      this.tillTheEnd = tillTheEnd;
+      this.errors = new AtomicThrowable();
+      this.observer = new DelayErrorInnerObserver<>(actual, this);
+      this.worker = worker;
+    }
 
-        @Override
-        public void onNext(T value) {
-            if (sourceMode == QueueDisposable.NONE) {
-                queue.offer(value);
-            }
-            drain();
-        }
+    @Override
+    public void onSubscribe(Disposable d) {
+      if (DisposableHelper.validate(this.upstream, d)) {
+        this.upstream = d;
 
-        @Override
-        public void onError(Throwable e) {
-            if (errors.tryAddThrowableOrReport(e)) {
-                done = true;
-                drain();
-            }
-        }
+        if (d instanceof QueueDisposable) {
+          @SuppressWarnings("unchecked")
+          QueueDisposable<T> qd = (QueueDisposable<T>) d;
 
-        @Override
-        public void onComplete() {
+          int m = qd.requestFusion(QueueDisposable.ANY);
+          if (m == QueueDisposable.SYNC) {
+            sourceMode = m;
+            queue = qd;
             done = true;
+
+            downstream.onSubscribe(this);
+
             drain();
+            return;
+          }
+          if (m == QueueDisposable.ASYNC) {
+            sourceMode = m;
+            queue = qd;
+
+            downstream.onSubscribe(this);
+
+            return;
+          }
         }
 
-        @Override
-        public boolean isDisposed() {
-            return cancelled;
-        }
+        queue = new SpscLinkedArrayQueue<>(bufferSize);
 
-        @Override
-        public void dispose() {
-            cancelled = true;
-            upstream.dispose();
-            observer.dispose();
-            worker.dispose();
-            errors.tryTerminateAndReport();
-        }
-
-        void drain() {
-            if (getAndIncrement() != 0) {
-                return;
-            }
-
-            worker.schedule(this);
-        }
-
-        @SuppressWarnings("unchecked")
-        @Override
-        public void run() {
-            Observer<? super R> downstream = this.downstream;
-            SimpleQueue<T> queue = this.queue;
-            AtomicThrowable errors = this.errors;
-
-            for (;;) {
-
-                if (!active) {
-
-                    if (cancelled) {
-                        queue.clear();
-                        return;
-                    }
-
-                    if (!tillTheEnd) {
-                        Throwable ex = errors.get();
-                        if (ex != null) {
-                            queue.clear();
-                            cancelled = true;
-                            errors.tryTerminateConsumer(downstream);
-                            worker.dispose();
-                            return;
-                        }
-                    }
-
-                    boolean d = done;
-
-                    T v;
-
-                    try {
-                        v = queue.poll();
-                    } catch (Throwable ex) {
-                        Exceptions.throwIfFatal(ex);
-                        cancelled = true;
-                        this.upstream.dispose();
-                        errors.tryAddThrowableOrReport(ex);
-                        errors.tryTerminateConsumer(downstream);
-                        worker.dispose();
-                        return;
-                    }
-
-                    boolean empty = v == null;
-
-                    if (d && empty) {
-                        cancelled = true;
-                        errors.tryTerminateConsumer(downstream);
-                        worker.dispose();
-                        return;
-                    }
-
-                    if (!empty) {
-
-                        ObservableSource<? extends R> o;
-
-                        try {
-                            o = Objects.requireNonNull(mapper.apply(v), "The mapper returned a null ObservableSource");
-                        } catch (Throwable ex) {
-                            Exceptions.throwIfFatal(ex);
-                            cancelled = true;
-                            this.upstream.dispose();
-                            queue.clear();
-                            errors.tryAddThrowableOrReport(ex);
-                            errors.tryTerminateConsumer(downstream);
-                            worker.dispose();
-                            return;
-                        }
-
-                        if (o instanceof Supplier) {
-                            R w;
-
-                            try {
-                                w = ((Supplier<R>)o).get();
-                            } catch (Throwable ex) {
-                                Exceptions.throwIfFatal(ex);
-                                errors.tryAddThrowableOrReport(ex);
-                                continue;
-                            }
-
-                            if (w != null && !cancelled) {
-                                downstream.onNext(w);
-                            }
-                            continue;
-                        } else {
-                            active = true;
-                            o.subscribe(observer);
-                        }
-                    }
-                }
-
-                if (decrementAndGet() == 0) {
-                    break;
-                }
-            }
-        }
-
-        static final class DelayErrorInnerObserver<R> extends AtomicReference<Disposable> implements Observer<R> {
-
-            private static final long serialVersionUID = 2620149119579502636L;
-
-            final Observer<? super R> downstream;
-
-            final ConcatMapDelayErrorObserver<?, R> parent;
-
-            DelayErrorInnerObserver(Observer<? super R> actual, ConcatMapDelayErrorObserver<?, R> parent) {
-                this.downstream = actual;
-                this.parent = parent;
-            }
-
-            @Override
-            public void onSubscribe(Disposable d) {
-                DisposableHelper.replace(this, d);
-            }
-
-            @Override
-            public void onNext(R value) {
-                downstream.onNext(value);
-            }
-
-            @Override
-            public void onError(Throwable e) {
-                ConcatMapDelayErrorObserver<?, R> p = parent;
-                if (p.errors.tryAddThrowableOrReport(e)) {
-                    if (!p.tillTheEnd) {
-                        p.upstream.dispose();
-                    }
-                    p.active = false;
-                    p.drain();
-                }
-            }
-
-            @Override
-            public void onComplete() {
-                ConcatMapDelayErrorObserver<?, R> p = parent;
-                p.active = false;
-                p.drain();
-            }
-
-            void dispose() {
-                DisposableHelper.dispose(this);
-            }
-        }
+        downstream.onSubscribe(this);
+      }
     }
+
+    @Override
+    public void onNext(T value) {
+      if (sourceMode == QueueDisposable.NONE) {
+        queue.offer(value);
+      }
+      drain();
+    }
+
+    @Override
+    public void onError(Throwable e) {
+      if (errors.tryAddThrowableOrReport(e)) {
+        done = true;
+        drain();
+      }
+    }
+
+    @Override
+    public void onComplete() {
+      done = true;
+      drain();
+    }
+
+    @Override
+    public boolean isDisposed() {
+      return cancelled;
+    }
+
+    @Override
+    public void dispose() {
+      cancelled = true;
+      upstream.dispose();
+      observer.dispose();
+      worker.dispose();
+      errors.tryTerminateAndReport();
+    }
+
+    void drain() {
+      if (getAndIncrement() != 0) {
+        return;
+      }
+
+      worker.schedule(this);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Override
+    public void run() {
+      Observer<? super R> downstream = this.downstream;
+      SimpleQueue<T> queue = this.queue;
+      AtomicThrowable errors = this.errors;
+
+      for (; ; ) {
+
+        if (!active) {
+
+          if (cancelled) {
+            queue.clear();
+            return;
+          }
+
+          if (!tillTheEnd) {
+            Throwable ex = errors.get();
+            if (ex != null) {
+              queue.clear();
+              cancelled = true;
+              errors.tryTerminateConsumer(downstream);
+              worker.dispose();
+              return;
+            }
+          }
+
+          boolean d = done;
+
+          T v;
+
+          try {
+            v = queue.poll();
+          } catch (Throwable ex) {
+            Exceptions.throwIfFatal(ex);
+            cancelled = true;
+            this.upstream.dispose();
+            errors.tryAddThrowableOrReport(ex);
+            errors.tryTerminateConsumer(downstream);
+            worker.dispose();
+            return;
+          }
+
+          boolean empty = v == null;
+
+          if (d && empty) {
+            cancelled = true;
+            errors.tryTerminateConsumer(downstream);
+            worker.dispose();
+            return;
+          }
+
+          if (!empty) {
+
+            ObservableSource<? extends R> o;
+
+            try {
+              o =
+                  Objects.requireNonNull(
+                      mapper.apply(v), "The mapper returned a null ObservableSource");
+            } catch (Throwable ex) {
+              Exceptions.throwIfFatal(ex);
+              cancelled = true;
+              this.upstream.dispose();
+              queue.clear();
+              errors.tryAddThrowableOrReport(ex);
+              errors.tryTerminateConsumer(downstream);
+              worker.dispose();
+              return;
+            }
+
+            if (o instanceof Supplier) {
+              R w;
+
+              try {
+                w = ((Supplier<R>) o).get();
+              } catch (Throwable ex) {
+                Exceptions.throwIfFatal(ex);
+                errors.tryAddThrowableOrReport(ex);
+                continue;
+              }
+
+              if (w != null && !cancelled) {
+                downstream.onNext(w);
+              }
+              continue;
+            } else {
+              active = true;
+              o.subscribe(observer);
+            }
+          }
+        }
+
+        if (decrementAndGet() == 0) {
+          break;
+        }
+      }
+    }
+
+    static final class DelayErrorInnerObserver<R> extends AtomicReference<Disposable>
+        implements Observer<R> {
+
+      private static final long serialVersionUID = 2620149119579502636L;
+
+      final Observer<? super R> downstream;
+
+      final ConcatMapDelayErrorObserver<?, R> parent;
+
+      DelayErrorInnerObserver(
+          Observer<? super R> actual, ConcatMapDelayErrorObserver<?, R> parent) {
+        this.downstream = actual;
+        this.parent = parent;
+      }
+
+      @Override
+      public void onSubscribe(Disposable d) {
+        DisposableHelper.replace(this, d);
+      }
+
+      @Override
+      public void onNext(R value) {
+        downstream.onNext(value);
+      }
+
+      @Override
+      public void onError(Throwable e) {
+        ConcatMapDelayErrorObserver<?, R> p = parent;
+        if (p.errors.tryAddThrowableOrReport(e)) {
+          if (!p.tillTheEnd) {
+            p.upstream.dispose();
+          }
+          p.active = false;
+          p.drain();
+        }
+      }
+
+      @Override
+      public void onComplete() {
+        ConcatMapDelayErrorObserver<?, R> p = parent;
+        p.active = false;
+        p.drain();
+      }
+
+      void dispose() {
+        DisposableHelper.dispose(this);
+      }
+    }
+  }
 }

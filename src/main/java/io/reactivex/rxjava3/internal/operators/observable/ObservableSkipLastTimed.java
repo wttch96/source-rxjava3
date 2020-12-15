@@ -1,198 +1,210 @@
 /**
  * Copyright (c) 2016-present, RxJava Contributors.
  *
- * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
- * compliance with the License. You may obtain a copy of the License at
+ * <p>Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file
+ * except in compliance with the License. You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ * <p>http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software distributed under the License is
- * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
- * the License for the specific language governing permissions and limitations under the License.
+ * <p>Unless required by applicable law or agreed to in writing, software distributed under the
+ * License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+ * express or implied. See the License for the specific language governing permissions and
+ * limitations under the License.
  */
-
 package io.reactivex.rxjava3.internal.operators.observable;
 
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-
-import io.reactivex.rxjava3.core.*;
+import io.reactivex.rxjava3.core.ObservableSource;
+import io.reactivex.rxjava3.core.Observer;
+import io.reactivex.rxjava3.core.Scheduler;
 import io.reactivex.rxjava3.disposables.Disposable;
 import io.reactivex.rxjava3.internal.disposables.DisposableHelper;
 import io.reactivex.rxjava3.internal.queue.SpscLinkedArrayQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public final class ObservableSkipLastTimed<T> extends AbstractObservableWithUpstream<T, T> {
+  final long time;
+  final TimeUnit unit;
+  final Scheduler scheduler;
+  final int bufferSize;
+  final boolean delayError;
+
+  public ObservableSkipLastTimed(
+      ObservableSource<T> source,
+      long time,
+      TimeUnit unit,
+      Scheduler scheduler,
+      int bufferSize,
+      boolean delayError) {
+    super(source);
+    this.time = time;
+    this.unit = unit;
+    this.scheduler = scheduler;
+    this.bufferSize = bufferSize;
+    this.delayError = delayError;
+  }
+
+  @Override
+  public void subscribeActual(Observer<? super T> t) {
+    source.subscribe(new SkipLastTimedObserver<>(t, time, unit, scheduler, bufferSize, delayError));
+  }
+
+  static final class SkipLastTimedObserver<T> extends AtomicInteger
+      implements Observer<T>, Disposable {
+
+    private static final long serialVersionUID = -5677354903406201275L;
+    final Observer<? super T> downstream;
     final long time;
     final TimeUnit unit;
     final Scheduler scheduler;
-    final int bufferSize;
+    final SpscLinkedArrayQueue<Object> queue;
     final boolean delayError;
 
-    public ObservableSkipLastTimed(ObservableSource<T> source,
-            long time, TimeUnit unit, Scheduler scheduler, int bufferSize, boolean delayError) {
-        super(source);
-        this.time = time;
-        this.unit = unit;
-        this.scheduler = scheduler;
-        this.bufferSize = bufferSize;
-        this.delayError = delayError;
+    Disposable upstream;
+
+    volatile boolean cancelled;
+
+    volatile boolean done;
+    Throwable error;
+
+    SkipLastTimedObserver(
+        Observer<? super T> actual,
+        long time,
+        TimeUnit unit,
+        Scheduler scheduler,
+        int bufferSize,
+        boolean delayError) {
+      this.downstream = actual;
+      this.time = time;
+      this.unit = unit;
+      this.scheduler = scheduler;
+      this.queue = new SpscLinkedArrayQueue<>(bufferSize);
+      this.delayError = delayError;
     }
 
     @Override
-    public void subscribeActual(Observer<? super T> t) {
-        source.subscribe(new SkipLastTimedObserver<>(t, time, unit, scheduler, bufferSize, delayError));
+    public void onSubscribe(Disposable d) {
+      if (DisposableHelper.validate(this.upstream, d)) {
+        this.upstream = d;
+        downstream.onSubscribe(this);
+      }
     }
 
-    static final class SkipLastTimedObserver<T> extends AtomicInteger implements Observer<T>, Disposable {
+    @Override
+    public void onNext(T t) {
+      final SpscLinkedArrayQueue<Object> q = queue;
 
-        private static final long serialVersionUID = -5677354903406201275L;
-        final Observer<? super T> downstream;
-        final long time;
-        final TimeUnit unit;
-        final Scheduler scheduler;
-        final SpscLinkedArrayQueue<Object> queue;
-        final boolean delayError;
+      long now = scheduler.now(unit);
 
-        Disposable upstream;
+      q.offer(now, t);
 
-        volatile boolean cancelled;
+      drain();
+    }
 
-        volatile boolean done;
-        Throwable error;
+    @Override
+    public void onError(Throwable t) {
+      error = t;
+      done = true;
+      drain();
+    }
 
-        SkipLastTimedObserver(Observer<? super T> actual, long time, TimeUnit unit, Scheduler scheduler, int bufferSize, boolean delayError) {
-            this.downstream = actual;
-            this.time = time;
-            this.unit = unit;
-            this.scheduler = scheduler;
-            this.queue = new SpscLinkedArrayQueue<>(bufferSize);
-            this.delayError = delayError;
+    @Override
+    public void onComplete() {
+      done = true;
+      drain();
+    }
+
+    @Override
+    public void dispose() {
+      if (!cancelled) {
+        cancelled = true;
+        upstream.dispose();
+
+        if (getAndIncrement() == 0) {
+          queue.clear();
         }
+      }
+    }
 
-        @Override
-        public void onSubscribe(Disposable d) {
-            if (DisposableHelper.validate(this.upstream, d)) {
-                this.upstream = d;
-                downstream.onSubscribe(this);
-            }
-        }
+    @Override
+    public boolean isDisposed() {
+      return cancelled;
+    }
 
-        @Override
-        public void onNext(T t) {
-            final SpscLinkedArrayQueue<Object> q = queue;
+    void drain() {
+      if (getAndIncrement() != 0) {
+        return;
+      }
 
-            long now = scheduler.now(unit);
+      int missed = 1;
 
-            q.offer(now, t);
+      final Observer<? super T> a = downstream;
+      final SpscLinkedArrayQueue<Object> q = queue;
+      final boolean delayError = this.delayError;
+      final TimeUnit unit = this.unit;
+      final Scheduler scheduler = this.scheduler;
+      final long time = this.time;
 
-            drain();
-        }
+      for (; ; ) {
 
-        @Override
-        public void onError(Throwable t) {
-            error = t;
-            done = true;
-            drain();
-        }
+        for (; ; ) {
+          if (cancelled) {
+            queue.clear();
+            return;
+          }
 
-        @Override
-        public void onComplete() {
-            done = true;
-            drain();
-        }
+          boolean d = done;
 
-        @Override
-        public void dispose() {
-            if (!cancelled) {
-                cancelled = true;
-                upstream.dispose();
+          Long ts = (Long) q.peek();
 
-                if (getAndIncrement() == 0) {
-                    queue.clear();
+          boolean empty = ts == null;
+
+          long now = scheduler.now(unit);
+
+          if (!empty && ts > now - time) {
+            empty = true;
+          }
+
+          if (d) {
+            if (delayError) {
+              if (empty) {
+                Throwable e = error;
+                if (e != null) {
+                  a.onError(e);
+                } else {
+                  a.onComplete();
                 }
-            }
-        }
-
-        @Override
-        public boolean isDisposed() {
-            return cancelled;
-        }
-
-        void drain() {
-            if (getAndIncrement() != 0) {
                 return;
+              }
+            } else {
+              Throwable e = error;
+              if (e != null) {
+                queue.clear();
+                a.onError(e);
+                return;
+              } else if (empty) {
+                a.onComplete();
+                return;
+              }
             }
+          }
 
-            int missed = 1;
+          if (empty) {
+            break;
+          }
 
-            final Observer<? super T> a = downstream;
-            final SpscLinkedArrayQueue<Object> q = queue;
-            final boolean delayError = this.delayError;
-            final TimeUnit unit = this.unit;
-            final Scheduler scheduler = this.scheduler;
-            final long time = this.time;
+          q.poll();
+          @SuppressWarnings("unchecked")
+          T v = (T) q.poll();
 
-            for (;;) {
-
-                for (;;) {
-                    if (cancelled) {
-                        queue.clear();
-                        return;
-                    }
-
-                    boolean d = done;
-
-                    Long ts = (Long)q.peek();
-
-                    boolean empty = ts == null;
-
-                    long now = scheduler.now(unit);
-
-                    if (!empty && ts > now - time) {
-                        empty = true;
-                    }
-
-                    if (d) {
-                        if (delayError) {
-                            if (empty) {
-                                Throwable e = error;
-                                if (e != null) {
-                                    a.onError(e);
-                                } else {
-                                    a.onComplete();
-                                }
-                                return;
-                            }
-                        } else {
-                            Throwable e = error;
-                            if (e != null) {
-                                queue.clear();
-                                a.onError(e);
-                                return;
-                            } else
-                            if (empty) {
-                                a.onComplete();
-                                return;
-                            }
-                        }
-                    }
-
-                    if (empty) {
-                        break;
-                    }
-
-                    q.poll();
-                    @SuppressWarnings("unchecked")
-                    T v = (T)q.poll();
-
-                    a.onNext(v);
-                }
-
-                missed = addAndGet(-missed);
-                if (missed == 0) {
-                    break;
-                }
-            }
+          a.onNext(v);
         }
+
+        missed = addAndGet(-missed);
+        if (missed == 0) {
+          break;
+        }
+      }
     }
+  }
 }

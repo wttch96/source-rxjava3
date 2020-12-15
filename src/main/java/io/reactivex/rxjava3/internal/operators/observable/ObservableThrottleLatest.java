@@ -1,214 +1,219 @@
 /**
  * Copyright (c) 2016-present, RxJava Contributors.
  *
- * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
- * compliance with the License. You may obtain a copy of the License at
+ * <p>Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file
+ * except in compliance with the License. You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ * <p>http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software distributed under the License is
- * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
- * the License for the specific language governing permissions and limitations under the License.
+ * <p>Unless required by applicable law or agreed to in writing, software distributed under the
+ * License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+ * express or implied. See the License for the specific language governing permissions and
+ * limitations under the License.
  */
-
 package io.reactivex.rxjava3.internal.operators.observable;
 
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.*;
-
-import io.reactivex.rxjava3.core.*;
+import io.reactivex.rxjava3.core.Observable;
+import io.reactivex.rxjava3.core.Observer;
+import io.reactivex.rxjava3.core.Scheduler;
 import io.reactivex.rxjava3.disposables.Disposable;
 import io.reactivex.rxjava3.internal.disposables.DisposableHelper;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Emits the next or latest item when the given time elapses.
- * <p>
- * The operator emits the next item, then starts a timer. When the timer fires,
- * it tries to emit the latest item from upstream. If there was no upstream item,
- * in the meantime, the next upstream item is emitted immediately and the
- * timed process repeats.
+ *
+ * <p>The operator emits the next item, then starts a timer. When the timer fires, it tries to emit
+ * the latest item from upstream. If there was no upstream item, in the meantime, the next upstream
+ * item is emitted immediately and the timed process repeats.
+ *
  * <p>History: 2.1.14 - experimental
+ *
  * @param <T> the upstream and downstream value type
  * @since 2.2
  */
 public final class ObservableThrottleLatest<T> extends AbstractObservableWithUpstream<T, T> {
 
+  final long timeout;
+
+  final TimeUnit unit;
+
+  final Scheduler scheduler;
+
+  final boolean emitLast;
+
+  public ObservableThrottleLatest(
+      Observable<T> source, long timeout, TimeUnit unit, Scheduler scheduler, boolean emitLast) {
+    super(source);
+    this.timeout = timeout;
+    this.unit = unit;
+    this.scheduler = scheduler;
+    this.emitLast = emitLast;
+  }
+
+  @Override
+  protected void subscribeActual(Observer<? super T> observer) {
+    source.subscribe(
+        new ThrottleLatestObserver<>(observer, timeout, unit, scheduler.createWorker(), emitLast));
+  }
+
+  static final class ThrottleLatestObserver<T> extends AtomicInteger
+      implements Observer<T>, Disposable, Runnable {
+
+    private static final long serialVersionUID = -8296689127439125014L;
+
+    final Observer<? super T> downstream;
+
     final long timeout;
 
     final TimeUnit unit;
 
-    final Scheduler scheduler;
+    final Scheduler.Worker worker;
 
     final boolean emitLast;
 
-    public ObservableThrottleLatest(Observable<T> source,
-            long timeout, TimeUnit unit, Scheduler scheduler,
-            boolean emitLast) {
-        super(source);
-        this.timeout = timeout;
-        this.unit = unit;
-        this.scheduler = scheduler;
-        this.emitLast = emitLast;
+    final AtomicReference<T> latest;
+
+    Disposable upstream;
+
+    volatile boolean done;
+    Throwable error;
+
+    volatile boolean cancelled;
+
+    volatile boolean timerFired;
+
+    boolean timerRunning;
+
+    ThrottleLatestObserver(
+        Observer<? super T> downstream,
+        long timeout,
+        TimeUnit unit,
+        Scheduler.Worker worker,
+        boolean emitLast) {
+      this.downstream = downstream;
+      this.timeout = timeout;
+      this.unit = unit;
+      this.worker = worker;
+      this.emitLast = emitLast;
+      this.latest = new AtomicReference<>();
     }
 
     @Override
-    protected void subscribeActual(Observer<? super T> observer) {
-        source.subscribe(new ThrottleLatestObserver<>(observer, timeout, unit, scheduler.createWorker(), emitLast));
+    public void onSubscribe(Disposable d) {
+      if (DisposableHelper.validate(upstream, d)) {
+        upstream = d;
+        downstream.onSubscribe(this);
+      }
     }
 
-    static final class ThrottleLatestObserver<T>
-    extends AtomicInteger
-    implements Observer<T>, Disposable, Runnable {
+    @Override
+    public void onNext(T t) {
+      latest.set(t);
+      drain();
+    }
 
-        private static final long serialVersionUID = -8296689127439125014L;
+    @Override
+    public void onError(Throwable t) {
+      error = t;
+      done = true;
+      drain();
+    }
 
-        final Observer<? super T> downstream;
+    @Override
+    public void onComplete() {
+      done = true;
+      drain();
+    }
 
-        final long timeout;
+    @Override
+    public void dispose() {
+      cancelled = true;
+      upstream.dispose();
+      worker.dispose();
+      if (getAndIncrement() == 0) {
+        latest.lazySet(null);
+      }
+    }
 
-        final TimeUnit unit;
+    @Override
+    public boolean isDisposed() {
+      return cancelled;
+    }
 
-        final Scheduler.Worker worker;
+    @Override
+    public void run() {
+      timerFired = true;
+      drain();
+    }
 
-        final boolean emitLast;
+    void drain() {
+      if (getAndIncrement() != 0) {
+        return;
+      }
 
-        final AtomicReference<T> latest;
+      int missed = 1;
 
-        Disposable upstream;
+      AtomicReference<T> latest = this.latest;
+      Observer<? super T> downstream = this.downstream;
 
-        volatile boolean done;
-        Throwable error;
+      for (; ; ) {
 
-        volatile boolean cancelled;
+        for (; ; ) {
+          if (cancelled) {
+            latest.lazySet(null);
+            return;
+          }
 
-        volatile boolean timerFired;
+          boolean d = done;
 
-        boolean timerRunning;
-
-        ThrottleLatestObserver(Observer<? super T> downstream,
-                long timeout, TimeUnit unit, Scheduler.Worker worker,
-                boolean emitLast) {
-            this.downstream = downstream;
-            this.timeout = timeout;
-            this.unit = unit;
-            this.worker = worker;
-            this.emitLast = emitLast;
-            this.latest = new AtomicReference<>();
-        }
-
-        @Override
-        public void onSubscribe(Disposable d) {
-            if (DisposableHelper.validate(upstream, d)) {
-                upstream = d;
-                downstream.onSubscribe(this);
-            }
-        }
-
-        @Override
-        public void onNext(T t) {
-            latest.set(t);
-            drain();
-        }
-
-        @Override
-        public void onError(Throwable t) {
-            error = t;
-            done = true;
-            drain();
-        }
-
-        @Override
-        public void onComplete() {
-            done = true;
-            drain();
-        }
-
-        @Override
-        public void dispose() {
-            cancelled = true;
-            upstream.dispose();
+          if (d && error != null) {
+            latest.lazySet(null);
+            downstream.onError(error);
             worker.dispose();
-            if (getAndIncrement() == 0) {
-                latest.lazySet(null);
+            return;
+          }
+
+          T v = latest.get();
+          boolean empty = v == null;
+
+          if (d) {
+            v = latest.getAndSet(null);
+            if (!empty && emitLast) {
+              downstream.onNext(v);
             }
-        }
+            downstream.onComplete();
+            worker.dispose();
+            return;
+          }
 
-        @Override
-        public boolean isDisposed() {
-            return cancelled;
-        }
-
-        @Override
-        public void run() {
-            timerFired = true;
-            drain();
-        }
-
-        void drain() {
-            if (getAndIncrement() != 0) {
-                return;
+          if (empty) {
+            if (timerFired) {
+              timerRunning = false;
+              timerFired = false;
             }
+            break;
+          }
 
-            int missed = 1;
+          if (!timerRunning || timerFired) {
+            v = latest.getAndSet(null);
+            downstream.onNext(v);
 
-            AtomicReference<T> latest = this.latest;
-            Observer<? super T> downstream = this.downstream;
-
-            for (;;) {
-
-                for (;;) {
-                    if (cancelled) {
-                        latest.lazySet(null);
-                        return;
-                    }
-
-                    boolean d = done;
-
-                    if (d && error != null) {
-                        latest.lazySet(null);
-                        downstream.onError(error);
-                        worker.dispose();
-                        return;
-                    }
-
-                    T v = latest.get();
-                    boolean empty = v == null;
-
-                    if (d) {
-                        v = latest.getAndSet(null);
-                        if (!empty && emitLast) {
-                            downstream.onNext(v);
-                        }
-                        downstream.onComplete();
-                        worker.dispose();
-                        return;
-                    }
-
-                    if (empty) {
-                        if (timerFired) {
-                            timerRunning = false;
-                            timerFired = false;
-                        }
-                        break;
-                    }
-
-                    if (!timerRunning || timerFired) {
-                        v = latest.getAndSet(null);
-                        downstream.onNext(v);
-
-                        timerFired = false;
-                        timerRunning = true;
-                        worker.schedule(this, timeout, unit);
-                    } else {
-                        break;
-                    }
-                }
-
-                missed = addAndGet(-missed);
-                if (missed == 0) {
-                    break;
-                }
-            }
+            timerFired = false;
+            timerRunning = true;
+            worker.schedule(this, timeout, unit);
+          } else {
+            break;
+          }
         }
+
+        missed = addAndGet(-missed);
+        if (missed == 0) {
+          break;
+        }
+      }
     }
+  }
 }
