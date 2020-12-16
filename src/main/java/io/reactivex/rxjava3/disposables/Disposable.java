@@ -1,16 +1,3 @@
-/**
- * Copyright (c) 2016-present, RxJava Contributors.
- *
- * <p>Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file
- * except in compliance with the License. You may obtain a copy of the License at
- *
- * <p>http://www.apache.org/licenses/LICENSE-2.0
- *
- * <p>Unless required by applicable law or agreed to in writing, software distributed under the
- * License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing permissions and
- * limitations under the License.
- */
 package io.reactivex.rxjava3.disposables;
 
 import io.reactivex.rxjava3.annotations.NonNull;
@@ -21,25 +8,24 @@ import java.util.Objects;
 import java.util.concurrent.Future;
 import org.reactivestreams.Subscription;
 
-/** Represents a disposable resource. */
+/** 代表一个一次性的资源. */
 public interface Disposable {
-  /** Dispose the resource, the operation should be idempotent. */
+  /** 处置资源, 操作应该是幂等的. */
   void dispose();
 
   /**
-   * Returns true if this resource has been disposed.
+   * 如果已处理此资源, 则返回true.
    *
    * @return true if this resource has been disposed
    */
   boolean isDisposed();
 
   /**
-   * Construct a {@code Disposable} by wrapping a {@link Runnable} that is executed exactly once
-   * when the {@code Disposable} is disposed.
+   * 通过包装{@link Runnable}构造一个{@code Disposable}, 该{@link Runnable}在处理{@code Disposable}时仅执行一次.
    *
-   * @param run the Runnable to wrap
-   * @return the new Disposable instance
-   * @throws NullPointerException if {@code run} is {@code null}
+   * @param run 要包装的 Runnable
+   * @return 新的Disposable实例
+   * @throws NullPointerException 如果{@code run}为{@code null}
    * @since 3.0.0
    */
   @NonNull
@@ -49,8 +35,7 @@ public interface Disposable {
   }
 
   /**
-   * Construct a {@code Disposable} by wrapping a {@link Action} that is executed exactly once when
-   * the {@code Disposable} is disposed.
+   * 通过包装一个{@link Action}来构造一个{@code Disposable}, 该{@link Action}在处理完{@code Disposable}后将被执行一次.
    *
    * @param action the Action to wrap
    * @return the new Disposable instance
@@ -82,8 +67,7 @@ public interface Disposable {
   }
 
   /**
-   * Construct a {@code Disposable} by wrapping a {@link Future} that is cancelled exactly once when
-   * the {@code Disposable} is disposed.
+   * 通过包装一个{@link Future}构造一个{@code Disposable}, 该{@link Future}在处理{@code Disposable}时会被完全取消一次.
    *
    * @param future the Future to wrap
    * @param allowInterrupt if true, the future cancel happens via {@code Future.cancel(true)}
@@ -98,8 +82,8 @@ public interface Disposable {
   }
 
   /**
-   * Construct a {@code Disposable} by wrapping a {@link Subscription} that is cancelled exactly
-   * once when the {@code Disposable} is disposed.
+   * 通过包装{@link Subscription}, 构造一个{@code Disposable}, 当处置{@code Disposable}时, 该{@link
+   * Subscription}将被完全取消一次.
    *
    * @param subscription the Runnable to wrap
    * @return the new Disposable instance
@@ -113,8 +97,8 @@ public interface Disposable {
   }
 
   /**
-   * Construct a {@code Disposable} by wrapping an {@link AutoCloseable} that is closed exactly once
-   * when the {@code Disposable} is disposed.
+   * 通过包装一个{@link AutoCloseable}构造一个{@code Disposable}, 该{@link AutoCloseable}在处理{@code
+   * Disposable}时会被完全关闭一次.
    *
    * @param autoCloseable the AutoCloseable to wrap
    * @return the new Disposable instance
@@ -128,8 +112,7 @@ public interface Disposable {
   }
 
   /**
-   * Construct an {@link AutoCloseable} by wrapping a {@code Disposable} that is disposed when the
-   * returned {@code AutoCloseable} is closed.
+   * 通过包装{@code Disposable}构造一个{@link AutoCloseable}, 该{@code Disposable}在返回的{@code AutoCloseable}关闭时被处置.
    *
    * @param disposable the Disposable instance
    * @return the new AutoCloseable instance
@@ -143,9 +126,9 @@ public interface Disposable {
   }
 
   /**
-   * Returns a new, non-disposed {@code Disposable} instance.
+   * 返回一个新的未处置的{@code Disposable}实例.
    *
-   * @return a new, non-disposed {@code Disposable} instance
+   * @return 一个新的未处置的{@code Disposable}实例
    * @since 3.0.0
    */
   @NonNull
@@ -154,9 +137,9 @@ public interface Disposable {
   }
 
   /**
-   * Returns a shared, disposed {@code Disposable} instance.
+   * 返回一个共享的, 已处置的{@code Disposable}实例.
    *
-   * @return a shared, disposed {@code Disposable} instance
+   * @return 一个共享的, 已处置的{@code Disposable}实例
    * @since 3.0.0
    */
   @NonNull
