@@ -1,16 +1,3 @@
-/**
- * Copyright (c) 2016-present, RxJava Contributors.
- *
- * <p>Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file
- * except in compliance with the License. You may obtain a copy of the License at
- *
- * <p>http://www.apache.org/licenses/LICENSE-2.0
- *
- * <p>Unless required by applicable law or agreed to in writing, software distributed under the
- * License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing permissions and
- * limitations under the License.
- */
 package io.reactivex.rxjava3.disposables;
 
 import io.reactivex.rxjava3.annotations.NonNull;
@@ -24,9 +11,8 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * A disposable container that can hold onto multiple other {@link Disposable}s and offers
- * <em>O(1)</em> time complexity for {@link #add(Disposable)}, {@link #remove(Disposable)} and
- * {@link #delete(Disposable)} operations.
+ * 可以容纳多个其他{@link Disposable}并为{@link #add(Disposable)}, {@link #remove(Disposable)}
+ * 提供<em>O(1)</em>时间复杂度的一次性容器}和{@link #delete(Disposable)}操作.
  */
 public final class CompositeDisposable implements Disposable, DisposableContainer {
 
@@ -34,15 +20,14 @@ public final class CompositeDisposable implements Disposable, DisposableContaine
 
   volatile boolean disposed;
 
-  /** Creates an empty {@code CompositeDisposable}. */
+  /** 创建一个空的{@code CompositeDisposable}. */
   public CompositeDisposable() {}
 
   /**
-   * Creates a {@code CompositeDisposable} with the given array of initial {@link Disposable}
-   * elements.
+   * 使用给定的初始{@link Disposable}元素数组创建一个{@code CompositeDisposable}.
    *
-   * @param disposables the array of {@code Disposable}s to start with
-   * @throws NullPointerException if {@code disposables} or any of its array items is {@code null}
+   * @param disposables 以{@code Disposable}开头的数组
+   * @throws NullPointerException 如果{@code disposables}或其任何数组项目为{@code null}
    */
   public CompositeDisposable(@NonNull Disposable... disposables) {
     Objects.requireNonNull(disposables, "disposables is null");
@@ -54,11 +39,10 @@ public final class CompositeDisposable implements Disposable, DisposableContaine
   }
 
   /**
-   * Creates a {@code CompositeDisposable} with the given {@link Iterable} sequence of initial
-   * {@link Disposable} elements.
+   * 使用给定的初始{@link Disposable}元素的{@link Iterable}序列创建一个{@code CompositeDisposable}.
    *
-   * @param disposables the {@code Iterable} sequence of {@code Disposable} to start with
-   * @throws NullPointerException if {@code disposables} or any of its items is {@code null}
+   * @param disposables {@code Disposable}的{@code Iterable}序列
+   * @throws NullPointerException 如果{@code Disposable}或其任何物品为{@code null}
    */
   public CompositeDisposable(@NonNull Iterable<? extends Disposable> disposables) {
     Objects.requireNonNull(disposables, "disposables is null");
@@ -93,11 +77,11 @@ public final class CompositeDisposable implements Disposable, DisposableContaine
   }
 
   /**
-   * Adds a {@link Disposable} to this container or disposes it if the container has been disposed.
+   * *将{@link Disposable}添加到此容器中, 如果容器已处理, 则将其处置.
    *
-   * @param disposable the {@code Disposable} to add, not {@code null}
-   * @return {@code true} if successful, {@code false} if this container has been disposed
-   * @throws NullPointerException if {@code disposable} is {@code null}
+   * @param disposable 要添加的{@code Disposable}, 而不是{@code null}
+   * @return 如果成功, 则为{@code true}, 如果已处置此容器, 则为{@code false}
+   * @throws NullPointerException 如果{@code disposable}为{@code null}
    */
   @Override
   public boolean add(@NonNull Disposable disposable) {
@@ -120,13 +104,11 @@ public final class CompositeDisposable implements Disposable, DisposableContaine
   }
 
   /**
-   * Atomically adds the given array of {@link Disposable}s to the container or disposes them all if
-   * the container has been disposed.
+   * 以原子方式将给定的{@link Disposable}数组添加到容器中, 或者如果已丢弃容器, 则将它们全部处置.
    *
-   * @param disposables the array of {@code Disposable}s
-   * @return {@code true} if the operation was successful, {@code false} if the container has been
-   *     disposed
-   * @throws NullPointerException if {@code disposables} or any of its array items is {@code null}
+   * @param disposables {@code Disposable}的数组
+   * @return {@code true}如果操作成功, {@code false}如果容器已处置
+   * @throws NullPointerException 如果{@code Disposable}或其任何数组项目为{@code null}
    */
   public boolean addAll(@NonNull Disposable... disposables) {
     Objects.requireNonNull(disposables, "disposables is null");
@@ -153,11 +135,11 @@ public final class CompositeDisposable implements Disposable, DisposableContaine
   }
 
   /**
-   * Removes and disposes the given {@link Disposable} if it is part of this container.
+   * 移除并处置给定的{@link Disposable}(如果它是此容器的一部分).
    *
-   * @param disposable the disposable to remove and dispose, not {@code null}
-   * @return {@code true} if the operation was successful
-   * @throws NullPointerException if {@code disposable} is {@code null}
+   * @param disposable 一次性物品, 以去除和处置, 而不是{@code null}
+   * @return {@code true}如果操作成功
+   * @throws NullPointerException 如果{@code disposable}为{@code null}
    */
   @Override
   public boolean remove(@NonNull Disposable disposable) {
@@ -169,11 +151,11 @@ public final class CompositeDisposable implements Disposable, DisposableContaine
   }
 
   /**
-   * Removes (but does not dispose) the given {@link Disposable} if it is part of this container.
+   * 如果给定的{@link Disposable}是此容器的一部分, 则删除(但不处置).
    *
-   * @param disposable the disposable to remove, not {@code null}
-   * @return {@code true} if the operation was successful
-   * @throws NullPointerException if {@code disposable} is {@code null}
+   * @param disposable 一次性物品要移除, 而不是{@code null}
+   * @return {@code true}如果操作成功
+   * @throws NullPointerException 如果{@code disposable}为{@code null}
    */
   @Override
   public boolean delete(@NonNull Disposable disposable) {
@@ -194,10 +176,7 @@ public final class CompositeDisposable implements Disposable, DisposableContaine
     return true;
   }
 
-  /**
-   * Atomically clears the container, then disposes all the previously contained {@link
-   * Disposable}s.
-   */
+  /** 以原子方式清除容器, 然后处置所有先前包含的{@link Disposable}. */
   public void clear() {
     if (disposed) {
       return;
@@ -216,9 +195,9 @@ public final class CompositeDisposable implements Disposable, DisposableContaine
   }
 
   /**
-   * Returns the number of currently held {@link Disposable}s.
+   * 返回当前持有的{@link Disposable}的数量.
    *
-   * @return the number of currently held {@code Disposable}s
+   * @return 当前持有的{@link Disposable}的数量
    */
   public int size() {
     if (disposed) {
@@ -234,10 +213,9 @@ public final class CompositeDisposable implements Disposable, DisposableContaine
   }
 
   /**
-   * Dispose the contents of the {@link OpenHashSet} by suppressing non-fatal {@link Throwable}s
-   * till the end.
+   * 通过抑制非致命的{@link Throwable}直到最后, 处置{@link OpenHashSet}的内容.
    *
-   * @param set the {@code OpenHashSet} to dispose elements of
+   * @param set 要处置的 {@code OpenHashSet}
    */
   void dispose(@Nullable OpenHashSet<Disposable> set) {
     if (set == null) {
