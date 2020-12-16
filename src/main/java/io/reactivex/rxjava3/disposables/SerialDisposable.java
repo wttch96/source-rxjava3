@@ -1,47 +1,29 @@
-/**
- * Copyright (c) 2016-present, RxJava Contributors.
- *
- * <p>Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file
- * except in compliance with the License. You may obtain a copy of the License at
- *
- * <p>http://www.apache.org/licenses/LICENSE-2.0
- *
- * <p>Unless required by applicable law or agreed to in writing, software distributed under the
- * License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing permissions and
- * limitations under the License.
- */
 package io.reactivex.rxjava3.disposables;
 
 import io.reactivex.rxjava3.annotations.Nullable;
 import io.reactivex.rxjava3.internal.disposables.DisposableHelper;
 import java.util.concurrent.atomic.AtomicReference;
 
-/**
- * A Disposable container that allows atomically updating/replacing the contained Disposable with
- * another Disposable, disposing the old one when updating plus handling the disposition when the
- * container itself is disposed.
- */
+/** 一个Disposable容器, 它可以用另一个Disposable原子地更新/替换所包含的Disposable, 在更新时处置旧容器, 并在处置容器本身时处理该处置. */
 public final class SerialDisposable implements Disposable {
   final AtomicReference<Disposable> resource;
 
-  /** Constructs an empty SerialDisposable. */
+  /** 构造一个空的SerialDisposable. */
   public SerialDisposable() {
     this.resource = new AtomicReference<>();
   }
 
   /**
-   * Constructs a SerialDisposable with the given initial Disposable instance.
+   * 用给定的初始Disposable实例构造一个SerialDisposable.
    *
-   * @param initialDisposable the initial Disposable instance to use, null allowed
+   * @param initialDisposable 要使用的初始Disposable实例, 允许为null
    */
   public SerialDisposable(@Nullable Disposable initialDisposable) {
     this.resource = new AtomicReference<>(initialDisposable);
   }
 
   /**
-   * Atomically: set the next disposable on this container and dispose the previous one (if any) or
-   * dispose next if the container has been disposed.
+   * 原子地: 将下一个一次性用品放在此容器上, 并处置前一个(如果有的话); 如果已处置该容器, 则处置下一个.
    *
    * @param next the Disposable to set, may be null
    * @return true if the operation succeeded, false if the container has been disposed
@@ -52,8 +34,7 @@ public final class SerialDisposable implements Disposable {
   }
 
   /**
-   * Atomically: set the next disposable on this container but don't dispose the previous one (if
-   * any) or dispose next if the container has been disposed.
+   * 原子地: 将下一个一次性容器放在此容器上, 但不要丢弃上一个(如果有的话)或如果容器已经处置了则丢弃下一个.
    *
    * @param next the Disposable to set, may be null
    * @return true if the operation succeeded, false if the container has been disposed
@@ -64,9 +45,9 @@ public final class SerialDisposable implements Disposable {
   }
 
   /**
-   * Returns the currently contained Disposable or null if this container is empty.
+   * 返回当前包含的Disposable; 如果此容器为空, 则返回null.
    *
-   * @return the current Disposable, may be null
+   * @return 当前的Disposable, 可以为null
    */
   @Nullable
   public Disposable get() {
