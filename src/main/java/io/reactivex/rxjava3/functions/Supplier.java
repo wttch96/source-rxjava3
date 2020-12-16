@@ -1,25 +1,11 @@
-/**
- * Copyright (c) 2016-present, RxJava Contributors.
- *
- * <p>Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file
- * except in compliance with the License. You may obtain a copy of the License at
- *
- * <p>http://www.apache.org/licenses/LICENSE-2.0
- *
- * <p>Unless required by applicable law or agreed to in writing, software distributed under the
- * License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing permissions and
- * limitations under the License.
- */
 package io.reactivex.rxjava3.functions;
 
 import io.reactivex.rxjava3.annotations.NonNull;
 
 /**
- * A functional interface (callback) that provides a single value or throws an exception.
+ * 提供单个值或引发异常的功能接口(回调).
  *
- * <p>This interface was added to allow throwing any subclass of {@link Throwable}s, which is not
- * directly possible with the Java standard {@link java.util.concurrent.Callable} interface.
+ * <p>已添加此接口, 以允许抛出{@link Throwable}的任何子类, 这对于Java标准{@link java.util.concurrent.Callable}接口是不可能的.
  *
  * @param <T> the value type returned
  * @since 3.0.0
