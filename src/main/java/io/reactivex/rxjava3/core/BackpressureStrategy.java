@@ -1,39 +1,22 @@
-/**
- * Copyright (c) 2016-present, RxJava Contributors.
- *
- * <p>Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file
- * except in compliance with the License. You may obtain a copy of the License at
- *
- * <p>http://www.apache.org/licenses/LICENSE-2.0
- *
- * <p>Unless required by applicable law or agreed to in writing, software distributed under the
- * License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing permissions and
- * limitations under the License.
- */
 package io.reactivex.rxjava3.core;
 
-/** Represents the options for applying backpressure to a source sequence. */
+/** 表示将反压应用于源序列的选项. */
 public enum BackpressureStrategy {
   /**
-   * The {@code onNext} events are written without any buffering or dropping. Downstream has to deal
-   * with any overflow.
+   * 编写{@code onNext}事件时不会进行任何缓冲或删除. 下游必须处理任何溢出.
    *
-   * <p>Useful when one applies one of the custom-parameter onBackpressureXXX operators.
+   * <p>当将一个自定义参数应用在onBackpressureXXX运算符上时很有用.
    */
   MISSING,
   /**
-   * Signals a {@link io.reactivex.rxjava3.exceptions.MissingBackpressureException
-   * MissingBackpressureException} in case the downstream can't keep up.
+   * 发出信号{@link io.reactivex.rxjava3.exceptions.MissingBackpressureException
+   * MissingBackpressureException}以防下游无法跟上.
    */
   ERROR,
-  /** Buffers <em>all</em> {@code onNext} values until the downstream consumes it. */
+  /** 缓冲<em>all</em> {@code onNext}的值, 直到下游消耗它. */
   BUFFER,
-  /** Drops the most recent {@code onNext} value if the downstream can't keep up. */
+  /** 如果下游无法跟上, 则丢弃最新的{@code onNext}值. */
   DROP,
-  /**
-   * Keeps only the latest {@code onNext} value, overwriting any previous value if the downstream
-   * can't keep up.
-   */
+  /** 仅保留最新的{@code onNext}值, 如果下游跟不上, 则覆盖以前的任何值. */
   LATEST
 }
