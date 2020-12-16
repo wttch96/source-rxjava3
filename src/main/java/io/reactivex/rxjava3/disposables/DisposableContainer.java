@@ -1,46 +1,33 @@
-/**
- * Copyright (c) 2016-present, RxJava Contributors.
- *
- * <p>Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file
- * except in compliance with the License. You may obtain a copy of the License at
- *
- * <p>http://www.apache.org/licenses/LICENSE-2.0
- *
- * <p>Unless required by applicable law or agreed to in writing, software distributed under the
- * License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing permissions and
- * limitations under the License.
- */
 package io.reactivex.rxjava3.disposables;
 
 /**
- * Common interface to add and remove disposables from a container.
+ * 通用接口, 用于从容器中添加和移除一次性物品.
  *
  * @since 2.0
  */
 public interface DisposableContainer {
 
   /**
-   * Adds a disposable to this container or disposes it if the container has been disposed.
+   * 将一次性用品添加到此容器中, 或将其丢弃(如果已将其丢弃).
    *
-   * @param d the disposable to add, not null
-   * @return true if successful, false if this container has been disposed
+   * @param d 添加一次性操作, 不为null
+   * @return 如果成功, 则返回true; 如果已丢弃此容器, 则返回false
    */
   boolean add(Disposable d);
 
   /**
-   * Removes and disposes the given disposable if it is part of this container.
+   * 如果给定的一次性用品是该容器的一部分, 则将其除去并处置.
    *
-   * @param d the disposable to remove and dispose, not null
-   * @return true if the operation was successful
+   * @param d 一次性物品以移除和处置, 不为null
+   * @return 如果操作成功, 则为true
    */
   boolean remove(Disposable d);
 
   /**
-   * Removes but does not dispose the given disposable if it is part of this container.
+   * 如果给定的一次性用品是该容器的一部分，则将其除去但不进行处理.
    *
-   * @param d the disposable to remove, not null
-   * @return true if the operation was successful
+   * @param d 一次性移除, 不为null
+   * @return 如果操作成功, 则为true
    */
   boolean delete(Disposable d);
 }
