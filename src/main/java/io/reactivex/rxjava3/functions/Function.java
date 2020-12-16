@@ -1,23 +1,9 @@
-/**
- * Copyright (c) 2016-present, RxJava Contributors.
- *
- * <p>Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file
- * except in compliance with the License. You may obtain a copy of the License at
- *
- * <p>http://www.apache.org/licenses/LICENSE-2.0
- *
- * <p>Unless required by applicable law or agreed to in writing, software distributed under the
- * License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing permissions and
- * limitations under the License.
- */
 package io.reactivex.rxjava3.functions;
 
 import io.reactivex.rxjava3.annotations.NonNull;
 
 /**
- * A functional interface that takes a value and returns another value, possibly with a different
- * type and allows throwing a checked exception.
+ * 一个函数接口, 它接受一个值并返回另一个值, 该值可能具有不同的类型, 并允许引发已检查的异常.
  *
  * @param <T> the input value type
  * @param <R> the output value type
