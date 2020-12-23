@@ -1,74 +1,50 @@
-/**
- * Copyright (c) 2016-present, RxJava Contributors.
- *
- * <p>Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file
- * except in compliance with the License. You may obtain a copy of the License at
- *
- * <p>http://www.apache.org/licenses/LICENSE-2.0
- *
- * <p>Unless required by applicable law or agreed to in writing, software distributed under the
- * License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing permissions and
- * limitations under the License.
- */
 package io.reactivex.rxjava3.core;
 
 import io.reactivex.rxjava3.annotations.NonNull;
 import io.reactivex.rxjava3.disposables.Disposable;
 
 /**
- * Provides a mechanism for receiving push-based notification of a valueless completion or an error.
+ * 提供一种机制, 用于接收基于推送的无值完成或错误通知.
  *
- * <p>When a {@code CompletableObserver} is subscribed to a {@link CompletableSource} through the
- * {@link CompletableSource#subscribe(CompletableObserver)} method, the {@code CompletableSource}
- * calls {@link #onSubscribe(Disposable)} with a {@link Disposable} that allows disposing the
- * sequence at any time. A well-behaved {@code CompletableSource} will call a {@code
- * CompletableObserver}'s {@link #onError(Throwable)} or {@link #onComplete()} method exactly once
- * as they are considered mutually exclusive <strong>terminal signals</strong>.
+ * <p>当通过{@link CompletableSource＃subscribe(CompletableObserver)}方法将{@code CompletableObserver}
+ * 订阅到{@link CompletableSource}时, {@code CompletableSource}会调用{@link #onSubscribe(Disposable)}
+ * {@link Disposable}允许随时处理序列. 行为良好的{@code CompletableSource}会调用一次{@code CompletableObserver}的{@link
+ * #onError(Throwable)} 或{@link #onComplete()}方法一次, 因为它们被认为是互斥的<strong>终端信号</strong>.
  *
- * <p>Calling the {@code CompletableObserver}'s method must happen in a serialized fashion, that is,
- * they must not be invoked concurrently by multiple threads in an overlapping fashion and the
- * invocation pattern must adhere to the following protocol:
+ * <p>调用{@code CompletableObserver}的方法必须以序列化的方式进行, 也就是说, 一定不能由多个线程以重叠的方式同时调用它们, 并且调用模式必须遵循以下协议:
  *
  * <pre><code>    onSubscribe (onError | onComplete)?</code></pre>
  *
- * <p>Subscribing a {@code CompletableObserver} to multiple {@code CompletableSource}s is not
- * recommended. If such reuse happens, it is the duty of the {@code CompletableObserver}
- * implementation to be ready to receive multiple calls to its methods and ensure proper concurrent
- * behavior of its business logic.
+ * <p>不建议您将{@code CompletableObserver}订阅到多个{@code CompletableSource}. 如果发生此类重用, 则{@code
+ * CompletableObserver} 实现的职责是准备接收对其方法的多次调用, 并确保其业务逻辑正确并发.
  *
- * <p>Calling {@link #onSubscribe(Disposable)} or {@link #onError(Throwable)} with a {@code null}
- * argument is forbidden.
+ * <p>使用{@code null} 参数禁止调用{@link #onSubscribe(Disposable)}或{@link #onError(Throwable)}.
  *
- * <p>The implementations of the {@code onXXX} methods should avoid throwing runtime exceptions
- * other than the following cases:
+ * <p>{@code onXXX}方法的实现应避免引发运行时异常, 下列情况除外:
  *
  * <ul>
- *   <li>If the argument is {@code null}, the methods can throw a {@code NullPointerException}. Note
- *       though that RxJava prevents {@code null}s to enter into the flow and thus there is
- *       generally no need to check for nulls in flows assembled from standard sources and
- *       intermediate operators.
- *   <li>If there is a fatal error (such as {@code VirtualMachineError}).
+ *   <li>如果参数为{@code null}, 则方法可以引发{@code NullPointerException}. 注意尽管RxJava阻止{@code null}进入流,
+ *       因此通常不需要检查从标准源和中间运算符汇编而来的流中是否有null.
+ *   <li>如果出现致命错误(例如{@code VirtualMachineError}).
  * </ul>
  *
  * @since 2.0
  */
 public interface CompletableObserver {
   /**
-   * Called once by the {@link Completable} to set a {@link Disposable} on this instance which then
-   * can be used to cancel the subscription at any time.
+   * 由{@link Completable}调用一次以在此实例上设置{@link Disposable}, 然后可随时用来取消订阅.
    *
-   * @param d the {@code Disposable} instance to call dispose on for cancellation, not null
+   * @param d {@code Disposable}实例以调用dispose进行取消, 而不是null
    */
   void onSubscribe(@NonNull Disposable d);
 
-  /** Called once the deferred computation completes normally. */
+  /** 延迟计算正常完成后调用. */
   void onComplete();
 
   /**
-   * Called once if the deferred computation 'throws' an exception.
+   * 如果延迟的计算“引发”异常, 则调用一次.
    *
-   * @param e the exception, not {@code null}.
+   * @param e 异常, 不是{@code null}.
    */
   void onError(@NonNull Throwable e);
 }
