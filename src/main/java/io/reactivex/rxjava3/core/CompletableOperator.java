@@ -1,29 +1,15 @@
-/**
- * Copyright (c) 2016-present, RxJava Contributors.
- *
- * <p>Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file
- * except in compliance with the License. You may obtain a copy of the License at
- *
- * <p>http://www.apache.org/licenses/LICENSE-2.0
- *
- * <p>Unless required by applicable law or agreed to in writing, software distributed under the
- * License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing permissions and
- * limitations under the License.
- */
 package io.reactivex.rxjava3.core;
 
 import io.reactivex.rxjava3.annotations.NonNull;
 
-/** Interface to map/wrap a downstream observer to an upstream observer. */
+/** 用于将下游观察者映射/包装到上游观察者的接口. */
 @FunctionalInterface
 public interface CompletableOperator {
   /**
-   * Applies a function to the child {@link CompletableObserver} and returns a new parent {@code
-   * CompletableObserver}.
+   * 将函数应用于子项{@link CompletableObserver}并返回新的父项{@code CompletableObserver}.
    *
-   * @param observer the child {@code CompletableObserver} instance
-   * @return the parent {@code CompletableObserver} instance
+   * @param observer 子{@code CompletableObserver}实例
+   * @return 父{@code CompletableObserver}实例
    * @throws Throwable on failure
    */
   @NonNull
