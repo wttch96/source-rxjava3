@@ -1,31 +1,15 @@
-/**
- * Copyright (c) 2016-present, RxJava Contributors.
- *
- * <p>Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file
- * except in compliance with the License. You may obtain a copy of the License at
- *
- * <p>http://www.apache.org/licenses/LICENSE-2.0
- *
- * <p>Unless required by applicable law or agreed to in writing, software distributed under the
- * License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied. See the License for the specific language governing permissions and
- * limitations under the License.
- */
 package io.reactivex.rxjava3.core;
 
 import io.reactivex.rxjava3.annotations.NonNull;
 
-/**
- * A functional interface that has a {@code subscribe()} method that receives an instance of a
- * {@link CompletableEmitter} instance that allows pushing an event in a cancellation-safe manner.
- */
+/** 具有{@code subscription()}方法的功能接口, 该方法接收 {@link CompletableEmitter}实例的实例, 该实例允许以取消安全的方式推送事件. */
 @FunctionalInterface
 public interface CompletableOnSubscribe {
 
   /**
-   * Called for each {@link CompletableObserver} that subscribes.
+   * 为每个订阅的{@link CompletableObserver}调用.
    *
-   * @param emitter the safe emitter instance, never {@code null}
+   * @param emitter 安全的发射器实例, 切勿{@code null}
    * @throws Throwable on error
    */
   void subscribe(@NonNull CompletableEmitter emitter) throws Throwable;
